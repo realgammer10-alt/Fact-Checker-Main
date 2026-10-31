@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Fact Checker Monitor</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #172033;
+        background: #f3f6fb;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; }
+      header { background: #12233f; color: white; padding: 28px max(24px, calc((100% - 1120px) / 2)); }
+      header h1 { margin: 0; font-size: 1.55rem; }
+      header p { margin: 7px 0 0; color: #c5d3e8; }
+      main { width: min(1120px, calc(100% - 40px)); margin: 28px auto 48px; }
+      .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+      .card, .panel { background: white; border: 1px solid #e1e7f0; border-radius: 12px; box-shadow: 0 3px 12px #1720330b; }
+      .card { padding: 18px; min-height: 116px; }
+      .label { color: #66748a; font-size: .82rem; font-weight: 650; letter-spacing: .02em; }
+      .value { display: block; margin-top: 12px; font-size: 1.4rem; font-weight: 720; overflow-wrap: anywhere; }
+      .subvalue { display: block; color: #66748a; font-size: .8rem; margin-top: 5px; }
+      .panel { padding: 22px; margin-top: 18px; }
+      .panel h2 { font-size: 1.08rem; margin: 0 0 16px; }
+      .health-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid #edf0f5; }
+      .health-line:first-of-type { border-top: 0; }
+      .badge { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 5px 10px; font-size: .78rem; font-weight: 700; background: #edf1f7; color: #59667a; white-space: nowrap; }
+      .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+      .healthy { background: #e8f7ef; color: #167447; }
+      .degraded { background: #fff3da; color: #966000; }
+      .offline, .failed { background: #fdebed; color: #b42332; }
+      .running { background: #eaf1ff; color: #315eb7; }
+      form { display: grid; gap: 12px; }
+      label { font-weight: 650; }
+      textarea { width: 100%; min-height: 100px; resize: vertical; border: 1px solid #c9d2e0; border-radius: 8px; padding: 12px; font: inherit; }
+      textarea:focus { outline: 3px solid #cbd9ff; border-color: #5379d2; }
+      .form-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+      button { border: 0; border-radius: 8px; background: #2857b7; color: white; padding: 11px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+      button:disabled { opacity: .6; cursor: wait; }
+      .hint, .muted { color: #66748a; font-size: .84rem; }
+      .result { margin-top: 15px; padding: 14px; border-radius: 8px; background: #f6f8fc; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .error-text { color: #b42332; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; text-align: left; }
+      th, td { padding: 11px 10px; border-top: 1px solid #edf0f5; font-size: .88rem; vertical-align: top; }
+      th { color: #66748a; font-size: .78rem; }
+      td:first-child { max-width: 400px; overflow-wrap: anywhere; }
+      .empty { color: #66748a; padding: 18px 0 4px; }
+      @media (max-width: 760px) {
+        .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        header { padding: 24px 20px; }
+      }
+      @media (max-width: 420px) {
+        main { width: calc(100% - 24px); margin-top: 16px; }
+        .grid { gap: 9px; }
+        .card { padding: 13px; }
+        .panel { padding: 16px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Fact Checker Monitor</h1>
+      <p>Live API health, service readiness, and fact-check activity</p>
+    </header>
+    <main>
+      <section class="grid" aria-label="Service metrics">
+        <article class="card">
+          <span class="label">API endpoint</span>
+          <span class="value"><span id="api-badge" class="badge degraded">Checking</span></span>
+          <span id="api-checked" class="subvalue">Waiting for first health check</span>
+        </article>
+        <article class="card">
+          <span class="label">Fact-checker</span>
+          <span id="readiness" class="value">Checking</span>
+          <span id="readiness-detail" class="subvalue">Checking dependencies and configuration</span>
+        </article>
+        <article class="card">
+          <span class="label">Uptime</span>
+          <span id="uptime" class="value">—</span>
+          <span id="started-at" class="subvalue">Server start time unavailable</span>
+        </article>
+        <article class="card">
+          <span class="label">Jobs</span>
+          <span id="jobs" class="value">0 active</span>
+          <span id="job-totals" class="subvalue">0 submitted</span>
+        </article>
+      </section>
+
+      <section class="panel" aria-labelledby="health-heading">
+        <h2 id="health-heading">Endpoint health checks</h2>
+        <div class="health-line">
+          <span><strong>GET /api/health</strong><br><span class="muted">API liveness and fact-checker readiness</span></span>
+          <span id="health-detail" class="badge degraded">Waiting</span>
+        </div>
+        <div class="health-line">
+          <span><strong>GET /api/status</strong><br><span class="muted">Uptime, job totals, and endpoint request counts</span></span>
+          <span id="status-detail" class="badge degraded">Waiting</span>
+        </div>
+        <p class="hint">Health is polled every 5 seconds; monitoring status is refreshed every 3 seconds.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="traffic-heading">
+        <h2 id="traffic-heading">API traffic</h2>
+        <div class="health-line"><span>GET /api/health</span><strong id="health-requests">0</strong></div>
+        <div class="health-line"><span>GET /api/status</span><strong id="status-requests">0</strong></div>
+        <div class="health-line"><span>POST /api/fact-check</span><strong id="fact-check-requests">0</strong></div>
+        <div class="health-line"><span>GET /api/jobs/{job_id}</span><strong id="job-requests">0</strong></div>
+      </section>
+
+      <section class="panel" aria-labelledby="submit-heading">
+        <h2 id="submit-heading">Run a fact check</h2>
+        <form id="fact-check-form">
+          <label for="question">Question</label>
+          <textarea id="question" name="question" maxlength="4000" required placeholder="Enter a question to fact-check"></textarea>
+          <div class="form-row">
+            <button id="submit-button" type="submit">Start fact check</button>
+            <span class="hint">Maximum 4,000 characters; up to 4 jobs can run at once.</span>
+          </div>
+        </form>
+        <div id="job-result" class="result" role="status" aria-live="polite" hidden></div>
+      </section>
+
+      <section class="panel" aria-labelledby="recent-heading">
+        <h2 id="recent-heading">Recent jobs</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Question</th><th>Status</th><th>Duration</th><th>Created</th></tr></thead>
+            <tbody id="recent-jobs"><tr><td class="empty" colspan="4">No jobs yet.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const form = $("fact-check-form");
+      const submitButton = $("submit-button");
+      const jobResult = $("job-result");
+
+      function setBadge(element, label, state) {
+        element.className = `badge ${state}`;
+        element.textContent = label;
+      }
+
+      function formatDuration(seconds) {
+        if (seconds === null || seconds === undefined) return "In progress";
+        return `${seconds.toFixed(2)} s`;
+      }
+
+      function formatUptime(seconds) {
+        const total = Math.floor(seconds || 0);
+        const days = Math.floor(total / 86400);
+        const hours = Math.floor((total % 86400) / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const remainder = total % 60;
+        return days ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m ${remainder}s`;
+      }
+
+      function formatDate(value) {
+        if (!value) return "—";
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+      }
+
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, { cache: "no-store", ...options });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+        return payload;
+      }
+
+      async function refreshHealth() {
+        const started = performance.now();
+        try {
+          const health = await fetchJson("/api/health");
+          const elapsed = Math.round(performance.now() - started);
+          setBadge($("api-badge"), "Online", "healthy");
+          $("api-checked").textContent = `Checked ${new Date().toLocaleTimeString()} · ${elapsed} ms`;
+          const ready = health.fact_checker === "ready";
+          $("readiness").textContent = ready ? "Ready" : "Needs setup";
+          $("readiness-detail").textContent = ready
+            ? "LangChain and API key are configured"
+            : `${health.checks.langchain}; API key ${health.checks.openai_api_key}`;
+          setBadge($("health-detail"), "Reachable", "healthy");
+        } catch (error) {
+          setBadge($("api-badge"), "Offline", "offline");
+          $("api-checked").textContent = error.message;
+          $("readiness").textContent = "Unavailable";
+          $("readiness-detail").textContent = "Health check could not reach the API";
+          setBadge($("health-detail"), "Unreachable", "offline");
+        }
+      }
+
+      function renderJobs(jobs) {
+        const body = $("recent-jobs");
+        body.replaceChildren();
+        if (!jobs.length) {
+          const row = body.insertRow();
+          const cell = row.insertCell();
+          cell.colSpan = 4;
+          cell.className = "empty";
+          cell.textContent = "No jobs yet.";
+          return;
+        }
+        for (const job of jobs) {
+          const row = body.insertRow();
+          const question = row.insertCell();
+          question.textContent = job.question;
+          const statusCell = row.insertCell();
+          const badge = document.createElement("span");
+          const badgeState = job.status === "succeeded" ? "healthy" : job.status;
+          setBadge(badge, job.status, badgeState);
+          statusCell.append(badge);
+          row.insertCell().textContent = formatDuration(job.duration_seconds);
+          row.insertCell().textContent = formatDate(job.created_at);
+        }
+      }
+
+      async function refreshStatus() {
+        try {
+          const status = await fetchJson("/api/status");
+          $("uptime").textContent = formatUptime(status.uptime_seconds);
+          $("started-at").textContent = `Started ${formatDate(status.started_at)}`;
+          $("jobs").textContent = `${status.active_jobs} active`;
+          $("job-totals").textContent =
+            `${status.jobs.submitted} submitted · ${status.jobs.succeeded} succeeded · ${status.jobs.failed} failed`;
+          const requests = status.endpoint_requests;
+          $("health-requests").textContent = requests["/api/health"] || 0;
+          $("status-requests").textContent = requests["/api/status"] || 0;
+          $("fact-check-requests").textContent = requests["/api/fact-check"] || 0;
+          $("job-requests").textContent = requests["/api/jobs/{job_id}"] || 0;
+          setBadge($("status-detail"), "Reachable", "healthy");
+          renderJobs(status.recent_jobs);
+        } catch (error) {
+          setBadge($("status-detail"), "Unreachable", "offline");
+        }
+      }
+
+      async function pollJob(jobId) {
+        for (;;) {
+          const job = await fetchJson(`/api/jobs/${encodeURIComponent(jobId)}`);
+          if (job.status !== "running") return job;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const question = $("question").value.trim();
+        if (!question) {
+          $("question").focus();
+          return;
+        }
+        submitButton.disabled = true;
+        jobResult.hidden = false;
+        jobResult.className = "result";
+        jobResult.textContent = "Submitting fact-check…";
+        try {
+          const submitted = await fetchJson("/api/fact-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question }),
+          });
+          jobResult.textContent = "Fact-check is running…";
+          const completed = await pollJob(submitted.job_id);
+          if (completed.status === "succeeded") {
+            jobResult.textContent = completed.result || "(No answer returned.)";
+          } else {
+            jobResult.classList.add("error-text");
+            jobResult.textContent = completed.error || "Fact-check failed.";
+          }
+          await refreshStatus();
+        } catch (error) {
+          jobResult.classList.add("error-text");
+          jobResult.textContent = error.message;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      refreshHealth();
+      refreshStatus();
+      window.setInterval(refreshHealth, 5000);
+      window.setInterval(refreshStatus, 3000);
+    </script>
+  </body>
+</html>
